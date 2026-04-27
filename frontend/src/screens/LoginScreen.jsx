@@ -111,7 +111,7 @@ export default function LoginScreen() {
           </button>
         </div>
 
-        <div style={styles.divider}>
+        {/* <div style={styles.divider}>
           <span style={styles.dividerLine} />
           <span style={styles.dividerText}>Demo access</span>
           <span style={styles.dividerLine} />
@@ -138,7 +138,7 @@ export default function LoginScreen() {
               <span style={styles.demoChipSub}>security / demo</span>
             </div>
           </button>
-        </div>
+        </div> */}
 
         <p style={styles.footer}>
           Don't have an account?{' '}
