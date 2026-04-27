@@ -1,0 +1,43 @@
+{
+  "expo": {
+    "name": "Sentinel",
+    "slug": "sentinel-campus-security",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0a0e1a",
+    "primaryColor": "#7c5cff",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.sentinel.campussecurity",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Sentinel uses the camera to scan visitor QR passes.",
+        "NSLocationWhenInUseUsageDescription": "Sentinel uses your location for SOS alerts."
+      }
+    },
+    "android": {
+      "package": "com.sentinel.campussecurity",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.INTERNET"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Sentinel to use your camera to scan visitor QR passes."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow Sentinel to use your location for SOS alerts."
+        }
+      ],
+      "expo-font"
+    ]
+  }
+}
