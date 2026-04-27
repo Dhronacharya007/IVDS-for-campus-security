@@ -15,6 +15,7 @@ const demoLabels = ['Fight detected', 'Crowd gathering', 'Suspicious activity', 
 export default function TestModelScreen({ navigation }) {
   const [file, setFile] = useState(null);
   const [result, setResult] = useState('');
+  const [savedFilename, setSavedFilename] = useState(null);
   const [loading, setLoading] = useState(false);
 
   const pick = async () => {
@@ -26,6 +27,7 @@ export default function TestModelScreen({ navigation }) {
     const asset = r.assets[0];
     setFile(asset);
     setResult('');
+    setSavedFilename(null);
   };
 
   const upload = async () => {
@@ -35,6 +37,7 @@ export default function TestModelScreen({ navigation }) {
     }
     setLoading(true);
     setResult('');
+    setSavedFilename(null);
 
     const demo = await isDemoMode();
     if (demo) {
@@ -59,12 +62,15 @@ export default function TestModelScreen({ navigation }) {
       });
       const json = await res.json();
       setResult(json.result || json.classification || 'No prediction');
+      setSavedFilename(json.saved ? json.saved_filename : null);
     } catch (e) {
       Alert.alert('Upload failed', 'Could not reach the backend.');
     } finally {
       setLoading(false);
     }
   };
+
+  const isNormal = (result || '').toLowerCase().includes('non-violence') || (result || '').toLowerCase().includes('normal');
 
   return (
     <ScreenContainer scroll>
@@ -105,6 +111,21 @@ export default function TestModelScreen({ navigation }) {
           <View style={styles.resultBox}>
             <Text style={styles.resultLabel}>AI CLASSIFICATION</Text>
             <Text style={styles.resultValue}>{result}</Text>
+            <Text style={styles.resultMeta}>
+              {savedFilename
+                ? '● Saved to Detected Clips'
+                : isNormal
+                  ? 'No threat detected — clip not saved'
+                  : 'Classification complete'}
+            </Text>
+            {savedFilename ? (
+              <Pressable
+                onPress={() => navigation.navigate('Clips')}
+                style={({ pressed }) => [styles.viewClipsBtn, pressed && { opacity: 0.7 }]}
+              >
+                <Text style={styles.viewClipsBtnText}>View in Detected Clips →</Text>
+              </Pressable>
+            ) : null}
           </View>
         ) : null}
       </View>
@@ -157,4 +178,24 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   resultValue: { color: colors.textPrimary, fontSize: 18, fontWeight: '700' },
+  resultMeta: {
+    marginTop: 6,
+    color: colors.textSecondary,
+    fontSize: 12,
+  },
+  viewClipsBtn: {
+    marginTop: 12,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 224, 164, 0.45)',
+    backgroundColor: 'rgba(0, 224, 164, 0.12)',
+  },
+  viewClipsBtnText: {
+    color: colors.accentSuccess,
+    fontSize: 13,
+    fontWeight: '700',
+  },
 });

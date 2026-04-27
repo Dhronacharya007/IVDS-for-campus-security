@@ -37,7 +37,8 @@
           "locationAlwaysAndWhenInUsePermission": "Allow Sentinel to use your location for SOS alerts."
         }
       ],
-      "expo-font"
+      "expo-font",
+      "expo-video"
     ]
   }
 }

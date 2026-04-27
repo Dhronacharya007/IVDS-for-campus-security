@@ -17,9 +17,9 @@ import Constants from 'expo-constants';
 //   └──────────────────────────────────────────────────────┘
 // ============================================================
 
-const FORCE_IP = 'x';      // 👈 your PC's LAN IP (overrides auto-detect)
+const FORCE_IP = '192.168.1.14';      // 👈 your PC's LAN IP (overrides auto-detect)
 const BACKEND_PORT = 8080;
-const FALLBACK_IP = 'x';
+const FALLBACK_IP = '192.168.1.14';
 
 function detectDevHost() {
   const hostUri =

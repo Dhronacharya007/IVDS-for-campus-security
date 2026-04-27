@@ -1,6 +1,16 @@
-import React from 'react';
+import React, { useState } from 'react';
 
 export default function VideoPlayer({ clipUri, onBack }) {
+  const [error, setError] = useState(null);
+
+  const handleError = () => {
+    setError(
+      'This clip could not be played. The file may be missing or use an unsupported codec ' +
+      '(only H.264 MP4 is playable in browsers). Try restarting the backend so legacy clips ' +
+      'are re-encoded automatically.'
+    );
+  };
+
   return (
     <div style={styles.container}>
       <div className="bg-aurora" />
@@ -10,11 +20,27 @@ export default function VideoPlayer({ clipUri, onBack }) {
           <span style={styles.label}>NOW PLAYING</span>
         </div>
         <div style={styles.videoWrap}>
-          <video controls autoPlay style={styles.video}>
+          <video
+            key={clipUri}
+            controls
+            autoPlay
+            playsInline
+            preload="metadata"
+            style={styles.video}
+            onError={handleError}
+          >
             <source src={clipUri} type="video/mp4" />
             Your browser does not support the video tag.
           </video>
         </div>
+        {error && <p style={styles.error}>{error}</p>}
+        <p style={styles.hint}>
+          If the player stays blank,{' '}
+          <a href={clipUri} target="_blank" rel="noreferrer" style={styles.link}>
+            open the clip in a new tab
+          </a>{' '}
+          to download it.
+        </p>
       </div>
     </div>
   );
@@ -75,5 +101,24 @@ const styles = {
     width: '100%',
     height: 'auto',
     display: 'block',
+  },
+  error: {
+    marginTop: '0.9rem',
+    padding: '0.7rem 0.9rem',
+    borderRadius: 10,
+    background: 'rgba(255, 77, 109, 0.12)',
+    border: '1px solid rgba(255, 77, 109, 0.35)',
+    color: '#ff8fa3',
+    fontSize: '0.85rem',
+    lineHeight: 1.5,
+  },
+  hint: {
+    marginTop: '0.7rem',
+    fontSize: '0.8rem',
+    color: '#a8b3cf',
+  },
+  link: {
+    color: '#00d4ff',
+    textDecoration: 'underline',
   },
 };

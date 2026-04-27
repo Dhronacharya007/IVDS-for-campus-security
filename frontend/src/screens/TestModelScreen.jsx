@@ -6,11 +6,13 @@ export default function TestModelScreen() {
   const navigate = useNavigate();
   const [videoFile, setVideoFile] = useState(null);
   const [result, setResult] = useState('');
+  const [savedFilename, setSavedFilename] = useState(null);
   const [loading, setLoading] = useState(false);
 
   const handleFileChange = (e) => {
     setVideoFile(e.target.files[0]);
     setResult('');
+    setSavedFilename(null);
   };
 
   const handleUpload = async () => {
@@ -22,6 +24,7 @@ export default function TestModelScreen() {
       setTimeout(() => {
         const demoResults = ['Fight Detected', 'Crowd Gathering', 'Suspicious Activity', 'Normal Activity'];
         setResult(demoResults[Math.floor(Math.random() * demoResults.length)]);
+        setSavedFilename(null);
         setLoading(false);
       }, 1500);
       return;
@@ -32,18 +35,22 @@ export default function TestModelScreen() {
 
     try {
       setLoading(true);
+      setSavedFilename(null);
       const res = await fetch(`${SERVER_URL}/test-model`, {
         method: 'POST',
         body: formData
       });
       const data = await res.json();
       setResult(data.result || 'No category detected');
+      setSavedFilename(data.saved ? data.saved_filename : null);
     } catch (err) {
       alert('❌ Error testing video');
     } finally {
       setLoading(false);
     }
   };
+
+  const isNormal = (result || '').toLowerCase().includes('non-violence') || (result || '').toLowerCase().includes('normal');
 
   return (
     <div className="app-page">
@@ -109,12 +116,28 @@ export default function TestModelScreen() {
                 <span style={styles.resultLabel}>Detection result</span>
               </div>
               <div style={styles.resultContent}>
-                <div style={styles.resultIcon}>✓</div>
+                <div style={styles.resultIcon}>{isNormal ? '✓' : '!'}</div>
                 <div>
                   <p style={styles.resultClass}>{result}</p>
-                  <p style={styles.resultMeta}>Model classification complete</p>
+                  <p style={styles.resultMeta}>
+                    {savedFilename
+                      ? 'Saved to Detected Clips'
+                      : isNormal
+                        ? 'No threat detected — clip not saved'
+                        : 'Model classification complete'}
+                  </p>
                 </div>
               </div>
+
+              {savedFilename && (
+                <button
+                  type="button"
+                  style={styles.viewClipsBtn}
+                  onClick={() => navigate('/clips')}
+                >
+                  View in Detected Clips →
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -277,5 +300,17 @@ const styles = {
   resultMeta: {
     fontSize: '0.8rem',
     color: '#a8b3cf',
+  },
+  viewClipsBtn: {
+    marginTop: '1rem',
+    padding: '0.55rem 0.85rem',
+    borderRadius: 10,
+    border: '1px solid rgba(0, 224, 164, 0.45)',
+    background: 'rgba(0, 224, 164, 0.12)',
+    color: '#00e0a4',
+    fontSize: '0.85rem',
+    fontWeight: 600,
+    cursor: 'pointer',
+    alignSelf: 'flex-start',
   },
 };

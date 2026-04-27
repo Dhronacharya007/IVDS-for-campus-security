@@ -15,6 +15,7 @@ import ScanInScreen from './src/screens/ScanInScreen';
 import ScanOutScreen from './src/screens/ScanOutScreen';
 import OverdueDashboardScreen from './src/screens/OverdueDashboardScreen';
 import SecurityVideosScreen from './src/screens/SecurityVideosScreen';
+import ClipPlayerScreen from './src/screens/ClipPlayerScreen';
 import SecurityMapScreen from './src/screens/SecurityMapScreen';
 import TestModelScreen from './src/screens/TestModelScreen';
 
@@ -58,6 +59,7 @@ export default function App() {
           <Stack.Screen name="ScanOut" component={ScanOutScreen} />
           <Stack.Screen name="Overdue" component={OverdueDashboardScreen} />
           <Stack.Screen name="Clips" component={SecurityVideosScreen} />
+          <Stack.Screen name="ClipPlayer" component={ClipPlayerScreen} />
           <Stack.Screen name="SosMap" component={SecurityMapScreen} />
           <Stack.Screen name="TestModel" component={TestModelScreen} />
         </Stack.Navigator>

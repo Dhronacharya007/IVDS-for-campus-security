@@ -1,13 +1,22 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import VideoPlayer from '../components/VideoPlayer';
 import { mockClips } from '../mockData';
+import {
+  downloadAndCache,
+  getCachedObjectUrl,
+  listCachedFilenames,
+} from '../utils/clipCache';
 
 const SERVER_URL = 'http://127.0.0.1:8080';
 
 const classificationColor = (cls) => {
   const c = (cls || '').toLowerCase();
   if (c.includes('fight') || c.includes('violence')) return { bg: 'rgba(255, 77, 109, 0.15)', border: 'rgba(255, 77, 109, 0.4)', text: '#ff4d6d' };
+  if (c.includes('fire')) return { bg: 'rgba(255, 138, 60, 0.18)', border: 'rgba(255, 138, 60, 0.45)', text: '#ff8a3c' };
+  if (c.includes('burglary')) return { bg: 'rgba(124, 92, 255, 0.18)', border: 'rgba(124, 92, 255, 0.45)', text: '#a78bfa' };
+  if (c.includes('vandal')) return { bg: 'rgba(255, 182, 39, 0.18)', border: 'rgba(255, 182, 39, 0.4)', text: '#ffb627' };
+  if (c.includes('abuse')) return { bg: 'rgba(255, 77, 109, 0.18)', border: 'rgba(255, 77, 109, 0.4)', text: '#ff8fa3' };
   if (c.includes('crowd')) return { bg: 'rgba(255, 182, 39, 0.15)', border: 'rgba(255, 182, 39, 0.4)', text: '#ffb627' };
   if (c.includes('suspicious')) return { bg: 'rgba(124, 92, 255, 0.15)', border: 'rgba(124, 92, 255, 0.4)', text: '#7c5cff' };
   return { bg: 'rgba(0, 212, 255, 0.15)', border: 'rgba(0, 212, 255, 0.4)', text: '#00d4ff' };
@@ -16,11 +25,15 @@ const classificationColor = (cls) => {
 const SecurityVideosScreen = () => {
   const navigate = useNavigate();
   const [clips, setClips] = useState([]);
-  const [selectedClipUri, setSelectedClipUri] = useState(null);
+  const [selected, setSelected] = useState(null); // { uri, isBlob }
   const [loading, setLoading] = useState(true);
+  // filename -> 'cached' | 'downloading' | 'error'
+  const [downloadStatus, setDownloadStatus] = useState({});
+  const isDemoRef = useRef(false);
 
   useEffect(() => {
     const isDemoMode = localStorage.getItem('demoMode') === 'true';
+    isDemoRef.current = isDemoMode;
     if (isDemoMode) {
       setClips(mockClips);
       setLoading(false);
@@ -35,25 +48,95 @@ const SecurityVideosScreen = () => {
         }
         return res.json();
       })
-      .then(json => {
-        console.log("✅ Clips from backend:", json);
-        setClips(json.clips || []);
+      .then((json) => {
+        const list = json.clips || [];
+        setClips(list);
         setLoading(false);
+        primeCache(list);
       })
-      .catch(err => {
+      .catch((err) => {
         alert('❌ Failed to fetch video clips. Check console for more info.');
-        console.error("❌ Could not fetch or parse /clips:", err);
+        console.error('❌ Could not fetch or parse /clips:', err);
         setLoading(false);
       });
   }, []);
 
-  if (selectedClipUri) {
+  // Pre-download every listed clip into IndexedDB so playback is local + offline.
+  async function primeCache(list) {
+    try {
+      const cachedKeys = await listCachedFilenames();
+      const cachedSet = new Set(cachedKeys);
+
+      const initial = {};
+      for (const c of list) {
+        if (cachedSet.has(c.filename)) initial[c.filename] = 'cached';
+      }
+      setDownloadStatus((prev) => ({ ...prev, ...initial }));
+
+      for (const c of list) {
+        if (cachedSet.has(c.filename)) continue;
+        setDownloadStatus((prev) => ({ ...prev, [c.filename]: 'downloading' }));
+        try {
+          await downloadAndCache(c.filename, `${SERVER_URL}/clips/${c.filename}`);
+          setDownloadStatus((prev) => ({ ...prev, [c.filename]: 'cached' }));
+        } catch (err) {
+          console.warn(`Failed to cache ${c.filename}:`, err);
+          setDownloadStatus((prev) => ({ ...prev, [c.filename]: 'error' }));
+        }
+      }
+    } catch (err) {
+      console.warn('Clip cache unavailable:', err);
+    }
+  }
+
+  async function handleSelect(item) {
+    if (isDemoRef.current) {
+      // Demo clips are not real files; just pretend.
+      setSelected({ uri: `${SERVER_URL}/clips/${item.filename}`, isBlob: false });
+      return;
+    }
+
+    // Try local cache first.
+    try {
+      const blobUrl = await getCachedObjectUrl(item.filename);
+      if (blobUrl) {
+        setSelected({ uri: blobUrl, isBlob: true });
+        return;
+      }
+    } catch (err) {
+      console.warn('Cache read failed, falling back to network:', err);
+    }
+
+    // Network fallback while caching kicks in.
+    try {
+      setDownloadStatus((prev) => ({ ...prev, [item.filename]: 'downloading' }));
+      await downloadAndCache(item.filename, `${SERVER_URL}/clips/${item.filename}`);
+      const blobUrl = await getCachedObjectUrl(item.filename);
+      setDownloadStatus((prev) => ({ ...prev, [item.filename]: 'cached' }));
+      setSelected({ uri: blobUrl || `${SERVER_URL}/clips/${item.filename}`, isBlob: !!blobUrl });
+    } catch (err) {
+      console.warn('Live download failed, streaming from server:', err);
+      setDownloadStatus((prev) => ({ ...prev, [item.filename]: 'error' }));
+      setSelected({ uri: `${SERVER_URL}/clips/${item.filename}`, isBlob: false });
+    }
+  }
+
+  function handleBack() {
+    if (selected?.isBlob && selected.uri) {
+      URL.revokeObjectURL(selected.uri);
+    }
+    setSelected(null);
+  }
+
+  if (selected) {
     return (
       <div style={styles.videoContainer}>
-        <VideoPlayer clipUri={selectedClipUri} onBack={() => setSelectedClipUri(null)} />
+        <VideoPlayer clipUri={selected.uri} onBack={handleBack} />
       </div>
     );
   }
+
+  const cachedCount = Object.values(downloadStatus).filter((s) => s === 'cached').length;
 
   return (
     <div className="app-page">
@@ -70,6 +153,13 @@ const SecurityVideosScreen = () => {
           <p style={styles.subtitle}>
             Footage automatically flagged by the AI threat-detection model.
           </p>
+          {!loading && clips.length > 0 && !isDemoRef.current && (
+            <p style={styles.cacheNote}>
+              {cachedCount === clips.length
+                ? `✓ All ${clips.length} clips saved to this device`
+                : `Saving ${cachedCount}/${clips.length} clips to this device for offline playback...`}
+            </p>
+          )}
         </div>
 
         {loading ? (
@@ -87,11 +177,12 @@ const SecurityVideosScreen = () => {
           <div style={styles.grid}>
             {clips.map((item, idx) => {
               const color = classificationColor(item.classification);
+              const status = downloadStatus[item.filename];
               return (
                 <button
                   key={idx}
                   style={styles.card}
-                  onClick={() => setSelectedClipUri(`${SERVER_URL}/clips/${item.filename}`)}
+                  onClick={() => handleSelect(item)}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.transform = 'translateY(-4px)';
                     e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.18)';
@@ -106,6 +197,13 @@ const SecurityVideosScreen = () => {
                     <span style={{ ...styles.tag, background: color.bg, borderColor: color.border, color: color.text }}>
                       {item.classification}
                     </span>
+                    {status && (
+                      <span style={{ ...styles.statusPill, ...statusPillStyle(status) }}>
+                        {status === 'cached' && '● Saved'}
+                        {status === 'downloading' && '↓ Saving...'}
+                        {status === 'error' && '! Online only'}
+                      </span>
+                    )}
                   </div>
                   <div style={styles.cardBody}>
                     <h3 style={styles.cardTitle}>{item.filename}</h3>
@@ -122,6 +220,12 @@ const SecurityVideosScreen = () => {
       </div>
     </div>
   );
+};
+
+const statusPillStyle = (status) => {
+  if (status === 'cached') return { color: '#00e0a4', borderColor: 'rgba(0, 224, 164, 0.4)', background: 'rgba(0, 224, 164, 0.12)' };
+  if (status === 'downloading') return { color: '#00d4ff', borderColor: 'rgba(0, 212, 255, 0.4)', background: 'rgba(0, 212, 255, 0.12)' };
+  return { color: '#ffb627', borderColor: 'rgba(255, 182, 39, 0.4)', background: 'rgba(255, 182, 39, 0.12)' };
 };
 
 const styles = {
@@ -178,6 +282,11 @@ const styles = {
     color: '#a8b3cf',
     fontSize: '0.95rem',
   },
+  cacheNote: {
+    marginTop: '0.6rem',
+    fontSize: '0.8rem',
+    color: '#6b7691',
+  },
   grid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
@@ -233,6 +342,18 @@ const styles = {
     fontWeight: 700,
     letterSpacing: '0.05em',
     textTransform: 'uppercase',
+    backdropFilter: 'blur(8px)',
+  },
+  statusPill: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    padding: '0.25rem 0.6rem',
+    borderRadius: 999,
+    border: '1px solid',
+    fontSize: '0.65rem',
+    fontWeight: 700,
+    letterSpacing: '0.04em',
     backdropFilter: 'blur(8px)',
   },
   cardBody: {
