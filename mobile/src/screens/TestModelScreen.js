@@ -48,9 +48,9 @@ export default function TestModelScreen({ navigation }) {
 
     try {
       const data = new FormData();
-      data.append('file', {
+      data.append('video', {
         uri: file.uri,
-        name: file.name,
+        name: file.name || 'upload.mp4',
         type: file.mimeType || 'video/mp4',
       });
       const res = await fetch(`${SERVER_URL}/test-model`, {
@@ -58,7 +58,7 @@ export default function TestModelScreen({ navigation }) {
         body: data,
       });
       const json = await res.json();
-      setResult(json.classification || 'No classification');
+      setResult(json.result || json.classification || 'No prediction');
     } catch (e) {
       Alert.alert('Upload failed', 'Could not reach the backend.');
     } finally {

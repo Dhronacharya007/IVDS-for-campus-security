@@ -31,7 +31,8 @@ export default function SecurityVideosScreen({ navigation }) {
       }
       try {
         const res = await axios.get(`${SERVER_URL}/clips`);
-        setClips(res.data || []);
+        const data = res.data;
+        setClips(Array.isArray(data) ? data : (data?.clips || []));
       } catch (e) {
         console.error(e);
         setClips([]);

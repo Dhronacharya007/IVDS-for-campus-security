@@ -32,7 +32,8 @@ export default function SecurityMapScreen({ navigation }) {
       }
       try {
         const res = await axios.get(`${SERVER_URL}/sos-alerts`);
-        setAlerts(res.data || []);
+        const data = res.data;
+        setAlerts(Array.isArray(data) ? data : (data?.alerts || []));
       } catch (e) {
         setAlerts([]);
       } finally {
