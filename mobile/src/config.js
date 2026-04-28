@@ -23,7 +23,7 @@ import Constants from 'expo-constants';
 const FORCE_IP = '';
 const BACKEND_PORT = 8080;
 // Last-resort fallback used only when both FORCE_IP and auto-detection fail.
-const FALLBACK_IP = '192.168.1.15';
+const FALLBACK_IP = '192.168.1.17';
 
 function detectDevHost() {
   const hostUri =
