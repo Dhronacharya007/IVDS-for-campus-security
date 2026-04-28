@@ -7,19 +7,23 @@ import Constants from 'expo-constants';
 //   Wi-Fi. The phone can't use "localhost" (that's the phone
 //   itself), so it has to use your PC's LAN IP.
 //
-//   ┌──────────────────────────────────────────────────────┐
-//   │ ⚡  FORCE_IP — set this to the IP that you confirmed  │
-//   │    works in your phone's browser (e.g. the URL that  │
-//   │    returned JSON when you visited /clips).            │
-//   │                                                       │
-//   │    Set to '' to fall back to auto-detection from      │
-//   │    Expo's dev manifest.                               │
-//   └──────────────────────────────────────────────────────┘
+//   This file is AUTO-DETECTING by default: it reads your
+//   Mac's current Wi-Fi IP from Expo's dev manifest (the same
+//   IP that Metro is bound to — visible in `npm start`'s
+//   "Metro waiting on exp://<ip>:<port>" line). When DHCP
+//   hands your Mac a new IP, the app follows along on the
+//   next reload.
+//
+//   FORCE_IP only needs a value if you're (a) using a
+//   production/standalone build, or (b) running on Expo
+//   Go via tunnel, where auto-detection can't see the LAN IP.
 // ============================================================
 
-const FORCE_IP = '192.168.1.14';      // 👈 your PC's LAN IP (overrides auto-detect)
+// Hard override. Leave empty ('') to auto-detect from Expo's dev manifest.
+const FORCE_IP = '';
 const BACKEND_PORT = 8080;
-const FALLBACK_IP = '192.168.1.14';
+// Last-resort fallback used only when both FORCE_IP and auto-detection fail.
+const FALLBACK_IP = '192.168.1.15';
 
 function detectDevHost() {
   const hostUri =

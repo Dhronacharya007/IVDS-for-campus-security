@@ -8,11 +8,21 @@ export default function OverdueDashboard() {
   const navigate = useNavigate();
   const [visitors, setVisitors] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [deletingId, setDeletingId] = useState(null);
+  const [clearingAll, setClearingAll] = useState(false);
+  const [isDemo, setIsDemo] = useState(false);
 
   useEffect(() => {
-    const isDemoMode = localStorage.getItem('demoMode') === 'true';
-    if (isDemoMode) {
-      setVisitors(mockOverdueVisitors);
+    const demoMode = localStorage.getItem('demoMode') === 'true';
+    setIsDemo(demoMode);
+    if (demoMode) {
+      // Mock data has no visitor_id; mint stable ones so the delete UI works.
+      setVisitors(
+        mockOverdueVisitors.map((v, idx) => ({
+          ...v,
+          visitor_id: v.visitor_id || `demo-${idx}`,
+        }))
+      );
       setLoading(false);
       return;
     }
@@ -32,6 +42,74 @@ export default function OverdueDashboard() {
       });
   }, []);
 
+  const handleDelete = async (visitor) => {
+    const id = visitor?.visitor_id;
+    if (!id) {
+      window.alert("This visitor has no id and can't be deleted.");
+      return;
+    }
+    if (!window.confirm(`Remove "${visitor.name || id}" from the overdue list?`)) {
+      return;
+    }
+
+    if (isDemo) {
+      setVisitors((prev) => prev.filter((v) => v.visitor_id !== id));
+      return;
+    }
+
+    setDeletingId(id);
+    try {
+      const res = await fetch(
+        `${SERVER_URL}/overdue-visitors/${encodeURIComponent(id)}`,
+        { method: 'DELETE', mode: 'cors' }
+      );
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || `Server returned ${res.status}`);
+      }
+      setVisitors((prev) => prev.filter((v) => v.visitor_id !== id));
+    } catch (err) {
+      console.error('Failed to delete visitor:', err);
+      window.alert(`Failed to remove visitor: ${err.message || err}`);
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const handleClearAll = async () => {
+    if (visitors.length === 0 || clearingAll) return;
+    if (
+      !window.confirm(
+        `Remove all ${visitors.length} overdue visitor${visitors.length === 1 ? '' : 's'}? This cannot be undone.`
+      )
+    ) {
+      return;
+    }
+
+    if (isDemo) {
+      setVisitors([]);
+      return;
+    }
+
+    setClearingAll(true);
+    try {
+      const res = await fetch(`${SERVER_URL}/overdue-visitors`, {
+        method: 'DELETE',
+        mode: 'cors',
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || `Server returned ${res.status}`);
+      }
+      setVisitors([]);
+    } catch (err) {
+      console.error('Failed to clear overdue visitors:', err);
+      window.alert(`Failed to clear list: ${err.message || err}`);
+    } finally {
+      setClearingAll(false);
+    }
+  };
+
   return (
     <div className="app-page">
       <div className="bg-aurora" />
@@ -42,11 +120,28 @@ export default function OverdueDashboard() {
 
       <div style={styles.content}>
         <div style={styles.header}>
-          <p style={styles.eyebrow}>Visitor Tracking</p>
-          <h1 style={styles.title}>Overdue Visitors</h1>
-          <p style={styles.subtitle}>
-            Visitors who have not yet checked out by their expected exit time.
-          </p>
+          <div style={styles.headerLeft}>
+            <p style={styles.eyebrow}>Visitor Tracking</p>
+            <h1 style={styles.title}>Overdue Visitors</h1>
+            <p style={styles.subtitle}>
+              Visitors who have not yet checked out by their expected exit time.
+            </p>
+          </div>
+          {!loading && visitors.length > 0 && (
+            <button
+              type="button"
+              onClick={handleClearAll}
+              disabled={clearingAll}
+              style={{
+                ...styles.clearAllBtn,
+                opacity: clearingAll ? 0.6 : 1,
+                cursor: clearingAll ? 'wait' : 'pointer',
+              }}
+              title="Remove every overdue visitor"
+            >
+              {clearingAll ? 'Clearing…' : 'Clear all'}
+            </button>
+          )}
         </div>
 
         <div style={styles.statsRow}>
@@ -75,22 +170,44 @@ export default function OverdueDashboard() {
           </div>
         ) : (
           <div style={styles.list}>
-            {visitors.map((v, i) => (
-              <div key={i} style={styles.row}>
-                <div style={styles.rowAvatar}>
-                  {v.name?.charAt(0).toUpperCase() || '?'}
+            {visitors.map((v, i) => {
+              const isDeleting = deletingId === v.visitor_id;
+              return (
+                <div
+                  key={v.visitor_id || i}
+                  style={{
+                    ...styles.row,
+                    opacity: isDeleting ? 0.55 : 1,
+                  }}
+                >
+                  <div style={styles.rowAvatar}>
+                    {v.name?.charAt(0).toUpperCase() || '?'}
+                  </div>
+                  <div style={styles.rowInfo}>
+                    <h3 style={styles.rowName}>{v.name}</h3>
+                    <p style={styles.rowMeta}>
+                      <span>{v.phone}</span>
+                      <span style={styles.dotSep}>•</span>
+                      <span>Out: {v.out_time}</span>
+                    </p>
+                  </div>
+                  <span style={styles.badge}>OVERDUE</span>
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(v)}
+                    disabled={isDeleting}
+                    style={{
+                      ...styles.deleteBtn,
+                      cursor: isDeleting ? 'wait' : 'pointer',
+                    }}
+                    title="Remove this visitor"
+                    aria-label={`Remove visitor ${v.name || v.visitor_id}`}
+                  >
+                    {isDeleting ? '…' : '×'}
+                  </button>
                 </div>
-                <div style={styles.rowInfo}>
-                  <h3 style={styles.rowName}>{v.name}</h3>
-                  <p style={styles.rowMeta}>
-                    <span>{v.phone}</span>
-                    <span style={styles.dotSep}>•</span>
-                    <span>Out: {v.out_time}</span>
-                  </p>
-                </div>
-                <span style={styles.badge}>OVERDUE</span>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -121,7 +238,27 @@ const styles = {
     gap: '1.75rem',
   },
   header: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: '1rem',
+    flexWrap: 'wrap',
     textAlign: 'left',
+  },
+  headerLeft: {
+    flex: '1 1 auto',
+    minWidth: 0,
+  },
+  clearAllBtn: {
+    padding: '0.55rem 1rem',
+    borderRadius: 10,
+    border: '1px solid rgba(255, 77, 109, 0.35)',
+    background: 'rgba(255, 77, 109, 0.12)',
+    color: '#ff8fa3',
+    fontSize: '0.8rem',
+    fontWeight: 600,
+    letterSpacing: '0.02em',
+    flexShrink: 0,
   },
   eyebrow: {
     fontSize: '0.85rem',
@@ -276,5 +413,21 @@ const styles = {
     fontSize: '0.7rem',
     fontWeight: 700,
     letterSpacing: '0.08em',
+  },
+  deleteBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: '50%',
+    border: '1px solid rgba(255, 77, 109, 0.35)',
+    background: 'rgba(255, 77, 109, 0.12)',
+    color: '#ff8fa3',
+    fontSize: '1.2rem',
+    fontWeight: 700,
+    lineHeight: 1,
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+    transition: 'all 0.15s ease',
   },
 };

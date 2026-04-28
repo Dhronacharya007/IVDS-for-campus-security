@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, Pressable, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, Pressable, ActivityIndicator, Alert } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import axios from 'axios';
 import ScreenContainer from '../components/ScreenContainer';
@@ -8,7 +8,11 @@ import PageHeader from '../components/PageHeader';
 import { colors, gradients, radius } from '../theme';
 import { SERVER_URL } from '../config';
 import { isDemoMode, mockClips } from '../mockData';
-import { downloadClip, listCachedFilenames } from '../utils/clipCache';
+import {
+  deleteCachedClip,
+  downloadClip,
+  listCachedFilenames,
+} from '../utils/clipCache';
 
 const classGradient = (cls) => {
   const c = (cls || '').toLowerCase();
@@ -28,6 +32,8 @@ export default function SecurityVideosScreen({ navigation }) {
   const [demo, setDemo] = useState(false);
   // filename -> 'cached' | 'downloading' | 'error'
   const [downloadStatus, setDownloadStatus] = useState({});
+  const [deletingFilename, setDeletingFilename] = useState(null);
+  const [clearingAll, setClearingAll] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -94,6 +100,107 @@ export default function SecurityVideosScreen({ navigation }) {
     });
   }
 
+  function removeClipFromState(filename) {
+    setClips((prev) => prev.filter((c) => c.filename !== filename));
+    setDownloadStatus((prev) => {
+      const next = { ...prev };
+      delete next[filename];
+      return next;
+    });
+  }
+
+  async function performDelete(c) {
+    if (deletingFilename) return;
+
+    if (demo) {
+      removeClipFromState(c.filename);
+      return;
+    }
+
+    setDeletingFilename(c.filename);
+    try {
+      await axios.delete(`${SERVER_URL}/clips/${encodeURIComponent(c.filename)}`);
+      try {
+        await deleteCachedClip(c.filename);
+      } catch (cacheErr) {
+        console.warn('[SecurityVideos] failed to remove cached file:', cacheErr);
+      }
+      removeClipFromState(c.filename);
+    } catch (err) {
+      console.error('[SecurityVideos] delete failed:', err);
+      const msg =
+        err?.response?.data?.error ||
+        err?.message ||
+        'Could not delete this clip.';
+      Alert.alert('Delete failed', msg);
+    } finally {
+      setDeletingFilename(null);
+    }
+  }
+
+  function confirmDelete(c) {
+    if (!c?.filename) return;
+    Alert.alert(
+      'Delete clip?',
+      `"${c.filename}" will be permanently deleted from the server and this device.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => performDelete(c),
+        },
+      ]
+    );
+  }
+
+  async function performClearAll() {
+    if (clips.length === 0 || clearingAll) return;
+    const filenames = clips.map((c) => c.filename);
+
+    if (demo) {
+      setClips([]);
+      setDownloadStatus({});
+      filenames.forEach((f) => deleteCachedClip(f).catch(() => {}));
+      return;
+    }
+
+    setClearingAll(true);
+    try {
+      await axios.delete(`${SERVER_URL}/clips`);
+      setClips([]);
+      setDownloadStatus({});
+      filenames.forEach((f) => deleteCachedClip(f).catch(() => {}));
+    } catch (err) {
+      console.error('[SecurityVideos] clear-all failed:', err);
+      const msg =
+        err?.response?.data?.error ||
+        err?.message ||
+        'Could not clear all clips.';
+      Alert.alert('Clear failed', msg);
+    } finally {
+      setClearingAll(false);
+    }
+  }
+
+  function confirmClearAll() {
+    if (clips.length === 0 || clearingAll) return;
+    Alert.alert(
+      'Delete all clips?',
+      `This will permanently remove all ${clips.length} clip${
+        clips.length === 1 ? '' : 's'
+      } from the server and this device.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete all',
+          style: 'destructive',
+          onPress: performClearAll,
+        },
+      ]
+    );
+  }
+
   const cachedCount = Object.values(downloadStatus).filter((s) => s === 'cached').length;
 
   return (
@@ -107,6 +214,25 @@ export default function SecurityVideosScreen({ navigation }) {
         subtitle="Flagged surveillance footage automatically classified by the AI model."
         eyebrowColor={colors.accentSecondary}
       />
+
+      {!loading && clips.length > 0 && (
+        <View style={styles.actionRow}>
+          <Pressable
+            onPress={confirmClearAll}
+            disabled={clearingAll}
+            style={({ pressed }) => [
+              styles.clearAllBtn,
+              (pressed || clearingAll) && { opacity: 0.6 },
+            ]}
+          >
+            {clearingAll ? (
+              <ActivityIndicator color="#ff8fa3" size="small" />
+            ) : (
+              <Text style={styles.clearAllText}>Clear all</Text>
+            )}
+          </Pressable>
+        </View>
+      )}
 
       {!loading && !demo && clips.length > 0 && (
         <Text style={styles.cacheNote}>
@@ -133,11 +259,17 @@ export default function SecurityVideosScreen({ navigation }) {
         <View style={styles.list}>
           {clips.map((c, i) => {
             const status = downloadStatus[c.filename];
+            const isDeleting = deletingFilename === c.filename;
             return (
               <Pressable
-                key={i}
+                key={c.filename || i}
                 onPress={() => openClip(c)}
-                style={({ pressed }) => [styles.card, pressed && { transform: [{ scale: 0.98 }] }]}
+                disabled={isDeleting}
+                style={({ pressed }) => [
+                  styles.card,
+                  pressed && { transform: [{ scale: 0.98 }] },
+                  isDeleting && { opacity: 0.5 },
+                ]}
               >
                 <LinearGradient colors={classGradient(c.classification)} style={styles.thumb}>
                   <Text style={styles.playIcon}>▶</Text>
@@ -157,6 +289,22 @@ export default function SecurityVideosScreen({ navigation }) {
                       </Text>
                     </View>
                   ) : null}
+                  <Pressable
+                    onPress={() => confirmDelete(c)}
+                    disabled={isDeleting}
+                    hitSlop={10}
+                    style={({ pressed }) => [
+                      styles.deleteBtn,
+                      pressed && { opacity: 0.7 },
+                    ]}
+                    accessibilityLabel={`Delete clip ${c.filename}`}
+                  >
+                    {isDeleting ? (
+                      <ActivityIndicator size="small" color="#ff8fa3" />
+                    ) : (
+                      <Text style={styles.deleteBtnText}>×</Text>
+                    )}
+                  </Pressable>
                 </LinearGradient>
                 <View style={styles.cardBody}>
                   <View style={styles.cardHead}>
@@ -238,6 +386,47 @@ const styles = StyleSheet.create({
   statusCached: { borderColor: 'rgba(0, 224, 164, 0.55)' },
   statusDownloading: { borderColor: 'rgba(0, 212, 255, 0.55)' },
   statusError: { borderColor: 'rgba(255, 182, 39, 0.55)' },
+  actionRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginTop: 12,
+  },
+  clearAllBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 77, 109, 0.45)',
+    backgroundColor: 'rgba(255, 77, 109, 0.12)',
+    minWidth: 90,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  clearAllText: {
+    color: '#ff8fa3',
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+  deleteBtn: {
+    position: 'absolute',
+    top: 10,
+    left: 10,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 77, 109, 0.55)',
+    backgroundColor: 'rgba(20, 24, 38, 0.7)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deleteBtnText: {
+    color: '#ff8fa3',
+    fontSize: 22,
+    lineHeight: 24,
+    fontWeight: '700',
+  },
   cardBody: { padding: 14 },
   cardHead: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
   tag: {

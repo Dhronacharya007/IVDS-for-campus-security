@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import VideoPlayer from '../components/VideoPlayer';
 import { mockClips } from '../mockData';
 import {
+  deleteCachedBlob,
   downloadAndCache,
   getCachedObjectUrl,
   listCachedFilenames,
@@ -25,10 +26,12 @@ const classificationColor = (cls) => {
 const SecurityVideosScreen = () => {
   const navigate = useNavigate();
   const [clips, setClips] = useState([]);
-  const [selected, setSelected] = useState(null); // { uri, isBlob }
+  const [selected, setSelected] = useState(null); // { uri, isBlob, filename }
   const [loading, setLoading] = useState(true);
   // filename -> 'cached' | 'downloading' | 'error'
   const [downloadStatus, setDownloadStatus] = useState({});
+  const [deletingFilename, setDeletingFilename] = useState(null);
+  const [clearingAll, setClearingAll] = useState(false);
   const isDemoRef = useRef(false);
 
   useEffect(() => {
@@ -92,7 +95,11 @@ const SecurityVideosScreen = () => {
   async function handleSelect(item) {
     if (isDemoRef.current) {
       // Demo clips are not real files; just pretend.
-      setSelected({ uri: `${SERVER_URL}/clips/${item.filename}`, isBlob: false });
+      setSelected({
+        uri: `${SERVER_URL}/clips/${item.filename}`,
+        isBlob: false,
+        filename: item.filename,
+      });
       return;
     }
 
@@ -100,7 +107,7 @@ const SecurityVideosScreen = () => {
     try {
       const blobUrl = await getCachedObjectUrl(item.filename);
       if (blobUrl) {
-        setSelected({ uri: blobUrl, isBlob: true });
+        setSelected({ uri: blobUrl, isBlob: true, filename: item.filename });
         return;
       }
     } catch (err) {
@@ -113,11 +120,19 @@ const SecurityVideosScreen = () => {
       await downloadAndCache(item.filename, `${SERVER_URL}/clips/${item.filename}`);
       const blobUrl = await getCachedObjectUrl(item.filename);
       setDownloadStatus((prev) => ({ ...prev, [item.filename]: 'cached' }));
-      setSelected({ uri: blobUrl || `${SERVER_URL}/clips/${item.filename}`, isBlob: !!blobUrl });
+      setSelected({
+        uri: blobUrl || `${SERVER_URL}/clips/${item.filename}`,
+        isBlob: !!blobUrl,
+        filename: item.filename,
+      });
     } catch (err) {
       console.warn('Live download failed, streaming from server:', err);
       setDownloadStatus((prev) => ({ ...prev, [item.filename]: 'error' }));
-      setSelected({ uri: `${SERVER_URL}/clips/${item.filename}`, isBlob: false });
+      setSelected({
+        uri: `${SERVER_URL}/clips/${item.filename}`,
+        isBlob: false,
+        filename: item.filename,
+      });
     }
   }
 
@@ -126,6 +141,111 @@ const SecurityVideosScreen = () => {
       URL.revokeObjectURL(selected.uri);
     }
     setSelected(null);
+  }
+
+  async function handleDelete(item, evt) {
+    // Prevent the parent <button> click that opens the player.
+    if (evt) {
+      evt.stopPropagation();
+      evt.preventDefault();
+    }
+    if (!item?.filename) return;
+    if (deletingFilename === item.filename) return;
+    if (!window.confirm(`Delete clip "${item.filename}"? This cannot be undone.`)) {
+      return;
+    }
+
+    if (isDemoRef.current) {
+      removeClipFromState(item.filename);
+      return;
+    }
+
+    setDeletingFilename(item.filename);
+    try {
+      const res = await fetch(
+        `${SERVER_URL}/clips/${encodeURIComponent(item.filename)}`,
+        { method: 'DELETE', mode: 'cors' }
+      );
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || `Server returned ${res.status}`);
+      }
+      // Remove from the local cache too so the list and storage stay in sync.
+      try {
+        await deleteCachedBlob(item.filename);
+      } catch (cacheErr) {
+        console.warn('Failed to remove cached blob:', cacheErr);
+      }
+      removeClipFromState(item.filename);
+    } catch (err) {
+      console.error('Failed to delete clip:', err);
+      window.alert(`Failed to delete clip: ${err.message || err}`);
+    } finally {
+      setDeletingFilename(null);
+    }
+  }
+
+  function removeClipFromState(filename) {
+    setClips((prev) => prev.filter((c) => c.filename !== filename));
+    setDownloadStatus((prev) => {
+      const next = { ...prev };
+      delete next[filename];
+      return next;
+    });
+    // If the deleted clip is currently being played, return to the list.
+    if (selected?.filename === filename) {
+      if (selected.isBlob && selected.uri) {
+        URL.revokeObjectURL(selected.uri);
+      }
+      setSelected(null);
+    }
+  }
+
+  async function handleClearAll() {
+    if (clips.length === 0 || clearingAll) return;
+    if (
+      !window.confirm(
+        `Delete all ${clips.length} clip${clips.length === 1 ? '' : 's'}? This cannot be undone.`
+      )
+    ) {
+      return;
+    }
+
+    if (isDemoRef.current) {
+      // Snapshot filenames so we can purge IndexedDB too (in case demo clips
+      // were ever cached).
+      const filenames = clips.map((c) => c.filename);
+      setClips([]);
+      setDownloadStatus({});
+      if (selected?.isBlob && selected.uri) URL.revokeObjectURL(selected.uri);
+      setSelected(null);
+      filenames.forEach((f) => deleteCachedBlob(f).catch(() => {}));
+      return;
+    }
+
+    setClearingAll(true);
+    try {
+      const res = await fetch(`${SERVER_URL}/clips`, {
+        method: 'DELETE',
+        mode: 'cors',
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || `Server returned ${res.status}`);
+      }
+      const filenames = clips.map((c) => c.filename);
+      setClips([]);
+      setDownloadStatus({});
+      if (selected?.isBlob && selected.uri) URL.revokeObjectURL(selected.uri);
+      setSelected(null);
+      // Best-effort cache wipe for every clip we knew about.
+      filenames.forEach((f) => deleteCachedBlob(f).catch(() => {}));
+    } catch (err) {
+      console.error('Failed to clear clips:', err);
+      window.alert(`Failed to clear clips: ${err.message || err}`);
+    } finally {
+      setClearingAll(false);
+    }
   }
 
   if (selected) {
@@ -148,17 +268,34 @@ const SecurityVideosScreen = () => {
 
       <div style={styles.content}>
         <div style={styles.header}>
-          <p style={styles.eyebrow}>AI Surveillance</p>
-          <h1 style={styles.title}>Detected Clips</h1>
-          <p style={styles.subtitle}>
-            Footage automatically flagged by the AI threat-detection model.
-          </p>
-          {!loading && clips.length > 0 && !isDemoRef.current && (
-            <p style={styles.cacheNote}>
-              {cachedCount === clips.length
-                ? `✓ All ${clips.length} clips saved to this device`
-                : `Saving ${cachedCount}/${clips.length} clips to this device for offline playback...`}
+          <div style={styles.headerLeft}>
+            <p style={styles.eyebrow}>AI Surveillance</p>
+            <h1 style={styles.title}>Detected Clips</h1>
+            <p style={styles.subtitle}>
+              Footage automatically flagged by the AI threat-detection model.
             </p>
+            {!loading && clips.length > 0 && !isDemoRef.current && (
+              <p style={styles.cacheNote}>
+                {cachedCount === clips.length
+                  ? `✓ All ${clips.length} clips saved to this device`
+                  : `Saving ${cachedCount}/${clips.length} clips to this device for offline playback...`}
+              </p>
+            )}
+          </div>
+          {!loading && clips.length > 0 && (
+            <button
+              type="button"
+              onClick={handleClearAll}
+              disabled={clearingAll}
+              style={{
+                ...styles.clearAllBtn,
+                opacity: clearingAll ? 0.6 : 1,
+                cursor: clearingAll ? 'wait' : 'pointer',
+              }}
+              title="Delete every clip"
+            >
+              {clearingAll ? 'Clearing…' : 'Clear all'}
+            </button>
           )}
         </div>
 
@@ -178,10 +315,15 @@ const SecurityVideosScreen = () => {
             {clips.map((item, idx) => {
               const color = classificationColor(item.classification);
               const status = downloadStatus[item.filename];
+              const isDeleting = deletingFilename === item.filename;
               return (
                 <button
-                  key={idx}
-                  style={styles.card}
+                  key={item.filename || idx}
+                  style={{
+                    ...styles.card,
+                    opacity: isDeleting ? 0.5 : 1,
+                    pointerEvents: isDeleting ? 'none' : 'auto',
+                  }}
                   onClick={() => handleSelect(item)}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.transform = 'translateY(-4px)';
@@ -204,6 +346,25 @@ const SecurityVideosScreen = () => {
                         {status === 'error' && '! Online only'}
                       </span>
                     )}
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`Delete clip ${item.filename}`}
+                      title="Delete clip"
+                      onClick={(e) => handleDelete(item, e)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          handleDelete(item, e);
+                        }
+                      }}
+                      style={{
+                        ...styles.deleteBtn,
+                        opacity: isDeleting ? 0.6 : 1,
+                        cursor: isDeleting ? 'wait' : 'pointer',
+                      }}
+                    >
+                      {isDeleting ? '…' : '×'}
+                    </span>
                   </div>
                   <div style={styles.cardBody}>
                     <h3 style={styles.cardTitle}>{item.filename}</h3>
@@ -260,7 +421,27 @@ const styles = {
     gap: '1.75rem',
   },
   header: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: '1rem',
+    flexWrap: 'wrap',
     textAlign: 'left',
+  },
+  headerLeft: {
+    flex: '1 1 auto',
+    minWidth: 0,
+  },
+  clearAllBtn: {
+    padding: '0.55rem 1rem',
+    borderRadius: 10,
+    border: '1px solid rgba(255, 77, 109, 0.35)',
+    background: 'rgba(255, 77, 109, 0.12)',
+    color: '#ff8fa3',
+    fontSize: '0.8rem',
+    fontWeight: 600,
+    letterSpacing: '0.02em',
+    flexShrink: 0,
   },
   eyebrow: {
     fontSize: '0.85rem',
@@ -347,7 +528,7 @@ const styles = {
   statusPill: {
     position: 'absolute',
     top: 12,
-    right: 12,
+    right: 56,
     padding: '0.25rem 0.6rem',
     borderRadius: 999,
     border: '1px solid',
@@ -355,6 +536,26 @@ const styles = {
     fontWeight: 700,
     letterSpacing: '0.04em',
     backdropFilter: 'blur(8px)',
+  },
+  deleteBtn: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    width: 32,
+    height: 32,
+    borderRadius: '50%',
+    border: '1px solid rgba(255, 77, 109, 0.45)',
+    background: 'rgba(20, 24, 38, 0.7)',
+    color: '#ff8fa3',
+    fontSize: '1.1rem',
+    fontWeight: 700,
+    lineHeight: 1,
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backdropFilter: 'blur(10px)',
+    WebkitBackdropFilter: 'blur(10px)',
+    userSelect: 'none',
   },
   cardBody: {
     padding: '1rem 1.1rem 1.1rem',
