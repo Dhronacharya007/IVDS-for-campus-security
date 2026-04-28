@@ -1,10 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { SERVER_URL } from '../config';
 
+const GEO_ERROR_MESSAGES = {
+  1: 'Location permission was denied. Enable it in your browser settings.',
+  2: 'Could not determine your position. Check that location services are on.',
+  3: 'Timed out fetching your location. Please retry.',
+};
+
 function UserHomeScreen() {
   const [location, setLocation] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [locationLoading, setLocationLoading] = useState(true);
+  const [locationError, setLocationError] = useState(null);
+  const [retryNonce, setRetryNonce] = useState(0);
   const [time, setTime] = useState(new Date());
   const navigate = useNavigate();
   const username = 'SampleUser';
@@ -13,24 +21,57 @@ function UserHomeScreen() {
     const isDemoMode = localStorage.getItem('demoMode') === 'true';
     if (isDemoMode) {
       setLocation({ latitude: 11.0692, longitude: 77.0042 });
-      setLoading(false);
-      return;
+      setLocationLoading(false);
+      return undefined;
     }
 
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) {
+      setLocationError('Geolocation is not supported in this browser.');
+      setLocationLoading(false);
+      return undefined;
+    }
+
+    let cancelled = false;
+    setLocationLoading(true);
+    setLocationError(null);
+
+    // watchPosition keeps the coords live as the user moves *and* resolves the
+    // first fix asynchronously. The timeout option is the critical fix — without
+    // it the browser silently waits forever when no fix is available.
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        if (cancelled) return;
         setLocation({
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+          accuracy: pos.coords.accuracy,
         });
-        setLoading(false);
+        setLocationLoading(false);
+        setLocationError(null);
       },
-      (error) => {
-        alert('Location access denied.');
-        setLoading(false);
+      (err) => {
+        if (cancelled) return;
+        setLocationError(GEO_ERROR_MESSAGES[err.code] || err.message || 'Location error');
+        setLocationLoading(false);
+      },
+      {
+        enableHighAccuracy: false,
+        timeout: 15_000,
+        maximumAge: 30_000,
       }
     );
-  }, []);
+
+    return () => {
+      cancelled = true;
+      try {
+        navigator.geolocation.clearWatch(watchId);
+      } catch {
+        /* ignore */
+      }
+    };
+  }, [retryNonce]);
+
+  const retryLocation = useCallback(() => setRetryNonce((n) => n + 1), []);
 
   useEffect(() => {
     const t = setInterval(() => setTime(new Date()), 1000);
@@ -38,11 +79,6 @@ function UserHomeScreen() {
   }, []);
 
   const handleSOS = async () => {
-    if (!location) {
-      alert('Location not available.');
-      return;
-    }
-
     const isDemoMode = localStorage.getItem('demoMode') === 'true';
     if (isDemoMode) {
       alert('🚨 SOS Sent. Security has been notified. (Demo Mode)');
@@ -53,12 +89,20 @@ function UserHomeScreen() {
       const response = await fetch(`${SERVER_URL}/sos`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, location }),
+        body: JSON.stringify({
+          username,
+          location: location || null,
+          source: 'manual',
+        }),
       });
 
       const data = await response.json();
       if (data.success) {
-        alert('🚨 SOS Sent. Security has been notified.');
+        if (data.has_location === false || !location) {
+          alert('🚨 SOS Sent. Security has been notified (without location — please share location).');
+        } else {
+          alert('🚨 SOS Sent. Security has been notified.');
+        }
       } else {
         alert('❌ Failed to send SOS');
       }
@@ -130,14 +174,28 @@ function UserHomeScreen() {
         <div style={styles.locationCard}>
           <div style={styles.locationHeader}>
             <p style={styles.cardLabel}>Live Location</p>
-            <span style={styles.liveDot}>
-              <span style={styles.livePulse} /> LIVE
-            </span>
+            {location && !locationError ? (
+              <span style={styles.liveDot}>
+                <span style={styles.livePulse} /> LIVE
+              </span>
+            ) : (
+              <span style={styles.offlineDot}>
+                {locationError ? 'UNAVAILABLE' : 'WAITING'}
+              </span>
+            )}
           </div>
-          {loading ? (
+
+          {locationLoading && !location ? (
             <div style={styles.loadingRow}>
               <div className="spinner" />
               <p style={styles.loadingText}>Fetching location...</p>
+            </div>
+          ) : locationError && !location ? (
+            <div style={styles.errorRow}>
+              <p style={styles.errorText}>{locationError}</p>
+              <button style={styles.retryBtn} onClick={retryLocation}>
+                Try again
+              </button>
             </div>
           ) : (
             <div style={styles.locationDetails}>
@@ -154,16 +212,16 @@ function UserHomeScreen() {
           )}
         </div>
 
-        <button
-          style={styles.sosButton}
-          onClick={handleSOS}
-          disabled={loading}
-        >
+        <button style={styles.sosButton} onClick={handleSOS}>
           <div style={styles.sosRing} />
           <div style={styles.sosCore}>
             <span style={styles.sosIcon}>!</span>
             <span style={styles.sosText}>SOS</span>
-            <span style={styles.sosHint}>Tap to send emergency alert</span>
+            <span style={styles.sosHint}>
+              {location
+                ? 'Tap to send emergency alert'
+                : 'Tap to send alert (no location)'}
+            </span>
           </div>
         </button>
       </div>
@@ -335,6 +393,18 @@ const styles = {
     background: '#ff4d6d',
     animation: 'pulse 1.5s ease-in-out infinite',
   },
+  offlineDot: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    padding: '0.25rem 0.65rem',
+    borderRadius: 999,
+    background: 'rgba(255, 182, 39, 0.12)',
+    border: '1px solid rgba(255, 182, 39, 0.3)',
+    color: '#ffb627',
+    fontSize: '0.7rem',
+    fontWeight: 700,
+    letterSpacing: '0.08em',
+  },
   locationDetails: {
     display: 'flex',
     alignItems: 'stretch',
@@ -370,6 +440,30 @@ const styles = {
   loadingText: {
     color: '#a8b3cf',
     fontSize: '0.95rem',
+  },
+  errorRow: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '1rem',
+    flexWrap: 'wrap',
+  },
+  errorText: {
+    color: '#ffb627',
+    fontSize: '0.9rem',
+    margin: 0,
+    flex: 1,
+    minWidth: 220,
+  },
+  retryBtn: {
+    padding: '0.5rem 0.9rem',
+    borderRadius: 10,
+    border: '1px solid rgba(124, 92, 255, 0.4)',
+    background: 'rgba(124, 92, 255, 0.12)',
+    color: '#a78bfa',
+    fontSize: '0.85rem',
+    fontWeight: 600,
+    cursor: 'pointer',
   },
   sosButton: {
     position: 'relative',

@@ -13,6 +13,7 @@ import OverdueDashboard from './screens/OverdueDashboard';
 import SecurityVideosScreen from './screens/SecurityVideosScreen';
 import SecurityMapScreen from './screens/SecurityMapScreen';
 import TestModelScreen from './screens/TestModelScreen';
+import VoiceSOSIndicator from './components/VoiceSOSIndicator';
 
 function App() {
   return (
@@ -33,6 +34,7 @@ function App() {
         <Route path="/sos-map" element={<SecurityMapScreen />} />
         <Route path="/test-model" element={<TestModelScreen />} />
       </Routes>
+      <VoiceSOSIndicator />
     </Router>
   );
 }

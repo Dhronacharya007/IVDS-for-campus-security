@@ -1,13 +1,16 @@
 import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { useVoiceSOS } from '../contexts/VoiceSOSContext';
 
 export default function ProfileScreen() {
   const location = useLocation();
   const navigate = useNavigate();
   const username = location.state?.username || 'Demo User';
   const initial = username.charAt(0).toUpperCase();
+  const { disableVoiceSOS } = useVoiceSOS();
 
   const handleSignOut = () => {
+    disableVoiceSOS();
     navigate('/login');
   };
 

@@ -2,21 +2,25 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { SERVER_URL } from '../config';
 import { setDemoMode } from '../mockData';
+import { useVoiceSOS } from '../contexts/VoiceSOSContext';
 
 export default function LoginScreen() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const { enableVoiceSOS, disableVoiceSOS } = useVoiceSOS();
 
   const handleSignIn = async () => {
     if (username === 'demo' && password === 'demo') {
       setDemoMode(true);
+      enableVoiceSOS({ username: 'Demo User' });
       navigate('/user-home', { state: { username: 'Demo User' } });
       return;
     }
     if (username === 'security' && password === 'demo') {
       setDemoMode(true);
+      disableVoiceSOS();
       navigate('/security-home');
       return;
     }
@@ -33,8 +37,10 @@ export default function LoginScreen() {
 
       if (data.success) {
         if (data.role === 'user') {
+          enableVoiceSOS({ username });
           navigate('/user-home', { state: { username } });
         } else if (data.role === 'security') {
+          disableVoiceSOS();
           navigate('/security-home');
         }
       } else {
