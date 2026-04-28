@@ -10,8 +10,11 @@ import {
   Pressable,
   Image,
   Linking,
-  ScrollView,
+  Modal,
 } from 'react-native';
+import DateTimePicker, {
+  DateTimePickerAndroid,
+} from '@react-native-community/datetimepicker';
 import axios from 'axios';
 import ScreenContainer from '../components/ScreenContainer';
 import BackButton from '../components/BackButton';
@@ -51,6 +54,26 @@ function formatPretty(value) {
   return d.toLocaleString();
 }
 
+function formatDateLabel(value) {
+  const d = parseLocalIso(value);
+  if (!d) return 'Pick date';
+  return d.toLocaleDateString(undefined, {
+    weekday: 'short',
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  });
+}
+
+function formatTimeLabel(value) {
+  const d = parseLocalIso(value);
+  if (!d) return 'Pick time';
+  return d.toLocaleTimeString(undefined, {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
 const QUICK_DURATIONS = [
   { label: '+30 min', minutes: 30 },
   { label: '+1 hr', minutes: 60 },
@@ -75,12 +98,68 @@ export default function GeneratePassScreen({ navigation }) {
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null);
   const [demo, setDemo] = useState(false);
+  // iOS shows the picker as an inline component; we wrap it in a modal so
+  // it sits above the form. Android uses the imperative dialog API.
+  const [iosPicker, setIosPicker] = useState(null); // { which, mode, draft }
 
   useEffect(() => {
     (async () => setDemo(await isDemoMode()))();
   }, []);
 
   const set = (key, val) => setForm((f) => ({ ...f, [key]: val }));
+
+  const fieldKey = (which) => (which === 'in' ? 'in_time' : 'out_time');
+
+  const applyPickedDate = (which, mode, picked) => {
+    const current =
+      parseLocalIso(form[fieldKey(which)]) ||
+      (which === 'in' ? new Date() : new Date(Date.now() + 2 * 60 * 60 * 1000));
+    const next = new Date(current);
+    if (mode === 'date') {
+      next.setFullYear(
+        picked.getFullYear(),
+        picked.getMonth(),
+        picked.getDate()
+      );
+    } else {
+      next.setHours(picked.getHours(), picked.getMinutes(), 0, 0);
+    }
+    set(fieldKey(which), toLocalIsoMinute(next));
+  };
+
+  const openPicker = (which, mode) => {
+    const current =
+      parseLocalIso(form[fieldKey(which)]) ||
+      (which === 'in' ? new Date() : new Date(Date.now() + 2 * 60 * 60 * 1000));
+
+    if (Platform.OS === 'android') {
+      DateTimePickerAndroid.open({
+        value: current,
+        mode,
+        is24Hour: false,
+        onChange: (event, selectedDate) => {
+          if (event.type === 'dismissed' || !selectedDate) return;
+          applyPickedDate(which, mode, selectedDate);
+        },
+      });
+    } else {
+      setIosPicker({ which, mode, draft: current });
+    }
+  };
+
+  const onIosPickerChange = (event, selectedDate) => {
+    if (selectedDate) {
+      setIosPicker((p) => (p ? { ...p, draft: selectedDate } : p));
+    }
+  };
+
+  const confirmIosPicker = () => {
+    if (!iosPicker) return;
+    applyPickedDate(iosPicker.which, iosPicker.mode, iosPicker.draft);
+    setIosPicker(null);
+  };
+
+  const cancelIosPicker = () => setIosPicker(null);
 
   const durationMinutes = useMemo(() => {
     const a = parseLocalIso(form.in_time);
@@ -332,27 +411,67 @@ export default function GeneratePassScreen({ navigation }) {
                 <Text style={styles.miniLink}>Use now</Text>
               </Pressable>
             </View>
-            <TextInput
-              style={styles.input}
-              placeholder="2026-04-28T14:30"
-              placeholderTextColor={colors.textMuted}
-              value={form.in_time}
-              onChangeText={(v) => set('in_time', v)}
-              autoCapitalize="none"
-            />
+            <View style={styles.pickerRow}>
+              <Pressable
+                onPress={() => openPicker('in', 'date')}
+                style={({ pressed }) => [
+                  styles.pickerCell,
+                  styles.pickerCellLeft,
+                  pressed && { opacity: 0.8 },
+                ]}
+              >
+                <Text style={styles.pickerCellLabel}>📅 Date</Text>
+                <Text style={styles.pickerCellValue}>
+                  {formatDateLabel(form.in_time)}
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => openPicker('in', 'time')}
+                style={({ pressed }) => [
+                  styles.pickerCell,
+                  styles.pickerCellRight,
+                  pressed && { opacity: 0.8 },
+                ]}
+              >
+                <Text style={styles.pickerCellLabel}>🕒 Time</Text>
+                <Text style={styles.pickerCellValue}>
+                  {formatTimeLabel(form.in_time)}
+                </Text>
+              </Pressable>
+            </View>
             <Text style={styles.helperText}>{formatPretty(form.in_time)}</Text>
           </View>
 
           <View style={styles.field}>
             <Text style={styles.label}>VALID UNTIL</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="2026-04-28T16:30"
-              placeholderTextColor={colors.textMuted}
-              value={form.out_time}
-              onChangeText={(v) => set('out_time', v)}
-              autoCapitalize="none"
-            />
+            <View style={styles.pickerRow}>
+              <Pressable
+                onPress={() => openPicker('out', 'date')}
+                style={({ pressed }) => [
+                  styles.pickerCell,
+                  styles.pickerCellLeft,
+                  pressed && { opacity: 0.8 },
+                ]}
+              >
+                <Text style={styles.pickerCellLabel}>📅 Date</Text>
+                <Text style={styles.pickerCellValue}>
+                  {formatDateLabel(form.out_time)}
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => openPicker('out', 'time')}
+                style={({ pressed }) => [
+                  styles.pickerCell,
+                  styles.pickerCellRight,
+                  pressed && { opacity: 0.8 },
+                ]}
+              >
+                <Text style={styles.pickerCellLabel}>🕒 Time</Text>
+                <Text style={styles.pickerCellValue}>
+                  {formatTimeLabel(form.out_time)}
+                </Text>
+              </Pressable>
+            </View>
             <Text style={styles.helperText}>{formatPretty(form.out_time)}</Text>
           </View>
 
@@ -418,6 +537,47 @@ export default function GeneratePassScreen({ navigation }) {
           />
         </View>
       </KeyboardAvoidingView>
+
+      {Platform.OS === 'ios' && iosPicker ? (
+        <Modal
+          transparent
+          animationType="fade"
+          visible
+          onRequestClose={cancelIosPicker}
+        >
+          <Pressable style={styles.modalBackdrop} onPress={cancelIosPicker}>
+            <Pressable style={styles.modalSheet} onPress={() => {}}>
+              <Text style={styles.modalTitle}>
+                {iosPicker.mode === 'date'
+                  ? `Pick ${iosPicker.which === 'in' ? 'start' : 'end'} date`
+                  : `Pick ${iosPicker.which === 'in' ? 'start' : 'end'} time`}
+              </Text>
+              <DateTimePicker
+                value={iosPicker.draft}
+                mode={iosPicker.mode}
+                display={iosPicker.mode === 'date' ? 'inline' : 'spinner'}
+                onChange={onIosPickerChange}
+                themeVariant="dark"
+                style={styles.iosPicker}
+              />
+              <View style={styles.modalButtonRow}>
+                <Pressable
+                  onPress={cancelIosPicker}
+                  style={({ pressed }) => [
+                    styles.modalCancelBtn,
+                    pressed && { opacity: 0.7 },
+                  ]}
+                >
+                  <Text style={styles.modalCancelText}>Cancel</Text>
+                </Pressable>
+                <View style={{ flex: 1 }}>
+                  <GradientButton title="Done" onPress={confirmIosPicker} />
+                </View>
+              </View>
+            </Pressable>
+          </Pressable>
+        </Modal>
+      ) : null}
     </ScreenContainer>
   );
 }
@@ -493,6 +653,75 @@ const styles = StyleSheet.create({
     marginTop: 6,
     color: colors.textMuted,
     fontSize: 12,
+  },
+  pickerRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  pickerCell: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    gap: 4,
+  },
+  pickerCellLeft: {},
+  pickerCellRight: {},
+  pickerCellLabel: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 0.6,
+  },
+  pickerCellValue: {
+    color: colors.textPrimary,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+  },
+  modalSheet: {
+    backgroundColor: '#161a2b',
+    borderRadius: radius.xl,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    gap: 12,
+  },
+  modalTitle: {
+    color: colors.textPrimary,
+    fontSize: 16,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  iosPicker: {
+    alignSelf: 'stretch',
+    backgroundColor: 'transparent',
+  },
+  modalButtonRow: {
+    flexDirection: 'row',
+    gap: 10,
+    alignItems: 'center',
+  },
+  modalCancelBtn: {
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+  },
+  modalCancelText: {
+    color: colors.textPrimary,
+    fontSize: 14,
+    fontWeight: '600',
   },
   chipRow: {
     flexDirection: 'row',

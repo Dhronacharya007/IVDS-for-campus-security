@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, Text, StyleSheet, Pressable, Alert } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import ScreenContainer from '../components/ScreenContainer';
 import Brand from '../components/Brand';
@@ -58,11 +58,13 @@ const tools = [
 ];
 
 export default function SecurityHomeScreen({ navigation }) {
-  const handleSignOut = () => {
-    Alert.alert('Sign out', 'Are you sure you want to sign out?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Sign Out', style: 'destructive', onPress: () => navigation.replace('Login') },
-    ]);
+  const [confirmingSignOut, setConfirmingSignOut] = useState(false);
+
+  const requestSignOut = () => setConfirmingSignOut(true);
+  const cancelSignOut = () => setConfirmingSignOut(false);
+  const confirmSignOut = () => {
+    setConfirmingSignOut(false);
+    navigation.replace('Login');
   };
 
   return (
@@ -70,12 +72,42 @@ export default function SecurityHomeScreen({ navigation }) {
       <View style={styles.topBar}>
         <Brand size={22} tag="Console" />
         <Pressable
-          onPress={handleSignOut}
+          onPress={requestSignOut}
           style={({ pressed }) => [styles.signOutBtn, pressed && { opacity: 0.7 }]}
         >
           <Text style={styles.signOutText}>Sign Out</Text>
         </Pressable>
       </View>
+
+      {confirmingSignOut ? (
+        <View style={styles.confirmCard}>
+          <Text style={styles.confirmTitle}>Sign out of Sentinel?</Text>
+          <Text style={styles.confirmSub}>
+            You'll be returned to the login screen. Any active sessions on
+            this device will be cleared.
+          </Text>
+          <View style={styles.confirmRow}>
+            <Pressable
+              onPress={cancelSignOut}
+              style={({ pressed }) => [
+                styles.confirmCancelBtn,
+                pressed && { opacity: 0.7 },
+              ]}
+            >
+              <Text style={styles.confirmCancelText}>Cancel</Text>
+            </Pressable>
+            <Pressable
+              onPress={confirmSignOut}
+              style={({ pressed }) => [
+                styles.confirmSignOutBtn,
+                pressed && { opacity: 0.85 },
+              ]}
+            >
+              <Text style={styles.confirmSignOutText}>Sign Out</Text>
+            </Pressable>
+          </View>
+        </View>
+      ) : null}
 
       <View style={styles.greeting}>
         <Text style={styles.eyebrow}>SECURITY DASHBOARD</Text>
@@ -134,6 +166,56 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 77, 109, 0.1)',
   },
   signOutText: { color: colors.accentDanger, fontSize: 13, fontWeight: '600' },
+  confirmCard: {
+    padding: 16,
+    borderRadius: radius.lg,
+    backgroundColor: 'rgba(255, 77, 109, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 77, 109, 0.3)',
+    marginBottom: 18,
+    gap: 8,
+  },
+  confirmTitle: {
+    color: colors.textPrimary,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  confirmSub: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  confirmRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 6,
+  },
+  confirmCancelBtn: {
+    flex: 1,
+    paddingVertical: 11,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    alignItems: 'center',
+  },
+  confirmCancelText: {
+    color: colors.textPrimary,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  confirmSignOutBtn: {
+    flex: 1,
+    paddingVertical: 11,
+    borderRadius: radius.md,
+    backgroundColor: colors.accentDanger,
+    alignItems: 'center',
+  },
+  confirmSignOutText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700',
+  },
   greeting: { marginBottom: 16 },
   eyebrow: {
     fontSize: 12,

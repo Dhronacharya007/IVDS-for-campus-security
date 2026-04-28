@@ -1,17 +1,19 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 export default function SecurityHomeScreen() {
   const navigate = useNavigate();
+  const [confirmingSignOut, setConfirmingSignOut] = useState(false);
 
   const handleNavigation = (path) => {
     navigate(path);
   };
 
-  const handleSignOut = () => {
-    if (window.confirm('Are you sure you want to sign out?')) {
-      navigate('/login');
-    }
+  const requestSignOut = () => setConfirmingSignOut(true);
+  const cancelSignOut = () => setConfirmingSignOut(false);
+  const confirmSignOut = () => {
+    setConfirmingSignOut(false);
+    navigate('/login');
   };
 
   const tools = [
@@ -87,10 +89,30 @@ export default function SecurityHomeScreen() {
           <span style={styles.brandText}>Sentinel</span>
           <span style={styles.brandTag}>Security Console</span>
         </div>
-        <button style={styles.signOutBtn} onClick={handleSignOut}>
+        <button style={styles.signOutBtn} onClick={requestSignOut}>
           Sign Out
         </button>
       </div>
+
+      {confirmingSignOut && (
+        <div style={styles.confirmCard}>
+          <div style={styles.confirmTextWrap}>
+            <h3 style={styles.confirmTitle}>Sign out of Sentinel?</h3>
+            <p style={styles.confirmSub}>
+              You'll be returned to the login screen. Any active session on
+              this device will be cleared.
+            </p>
+          </div>
+          <div style={styles.confirmActions}>
+            <button style={styles.confirmCancelBtn} onClick={cancelSignOut}>
+              Cancel
+            </button>
+            <button style={styles.confirmSignOutBtn} onClick={confirmSignOut}>
+              Sign Out
+            </button>
+          </div>
+        </div>
+      )}
 
       <div style={styles.content}>
         <div style={styles.heroSection}>
@@ -195,6 +217,63 @@ const styles = {
     color: '#ff4d6d',
     fontSize: '0.85rem',
     fontWeight: 600,
+    cursor: 'pointer',
+  },
+  confirmCard: {
+    width: '100%',
+    maxWidth: 1200,
+    margin: '0 0 1.5rem',
+    padding: '1.1rem 1.4rem',
+    borderRadius: 16,
+    background: 'rgba(255, 77, 109, 0.08)',
+    border: '1px solid rgba(255, 77, 109, 0.3)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '1rem',
+    flexWrap: 'wrap',
+  },
+  confirmTextWrap: {
+    flex: 1,
+    minWidth: 220,
+  },
+  confirmTitle: {
+    margin: 0,
+    color: '#f5f7fb',
+    fontSize: '1rem',
+    fontWeight: 700,
+  },
+  confirmSub: {
+    margin: '0.3rem 0 0',
+    color: '#a8b3cf',
+    fontSize: '0.85rem',
+    lineHeight: 1.5,
+  },
+  confirmActions: {
+    display: 'flex',
+    gap: '0.6rem',
+    flexShrink: 0,
+  },
+  confirmCancelBtn: {
+    padding: '0.55rem 1.1rem',
+    borderRadius: 10,
+    border: '1px solid rgba(255, 255, 255, 0.12)',
+    background: 'rgba(255, 255, 255, 0.04)',
+    color: '#f5f7fb',
+    fontSize: '0.85rem',
+    fontWeight: 600,
+    cursor: 'pointer',
+  },
+  confirmSignOutBtn: {
+    padding: '0.55rem 1.2rem',
+    borderRadius: 10,
+    border: 'none',
+    background: '#ff4d6d',
+    color: '#fff',
+    fontSize: '0.85rem',
+    fontWeight: 700,
+    cursor: 'pointer',
+    boxShadow: '0 6px 18px rgba(255, 77, 109, 0.35)',
   },
   content: {
     width: '100%',
